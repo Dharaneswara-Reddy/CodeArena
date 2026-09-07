@@ -3,11 +3,16 @@
   # ⚡ CodeArena — Online Judge Platform
 
   <p align="center">
-    <strong>A high-performance, real-time competitive programming platform built on the GERM Stack.</strong>
+    <strong>A high-performance, real-time competitive programming platform built on the GERM Stack —<br/>with an AI tutor designed around what it refuses to tell you.</strong>
+  </p>
+
+  <p align="center">
+    <a href="https://codearena-live.duckdns.org"><strong>🌐 Live at codearena-live.duckdns.org</strong></a>
   </p>
 
   <p align="center">
     <a href="#about-the-project">About</a> •
+    <a href="#-ai-assistant-v2">AI Assistant</a> •
     <a href="#tech-stack">Tech Stack</a> •
     <a href="#architecture--design-principles">Architecture</a> •
     <a href="#getting-started">Getting Started</a> •
@@ -20,8 +25,9 @@
     <img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go" />
     <img src="https://img.shields.io/badge/Gin-v1.12-008080?style=for-the-badge&logo=gin&logoColor=white" alt="Gin" />
     <img src="https://img.shields.io/badge/React-v19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React" />
-    <img src="https://img.shields.io/badge/Vite-v6-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite" />
+    <img src="https://img.shields.io/badge/Vite-v8-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite" />
     <img src="https://img.shields.io/badge/MongoDB-Atlas-47A248?style=for-the-badge&logo=mongodb&logoColor=white" alt="MongoDB" />
+    <img src="https://img.shields.io/badge/AI-Groq%20gpt--oss--120b-F55036?style=for-the-badge" alt="Groq" />
     <img src="https://img.shields.io/badge/Architecture-MVC-FF6F61?style=for-the-badge" alt="MVC" />
     <img src="https://img.shields.io/badge/Methodology-TDD-8A2BE2?style=for-the-badge" alt="TDD" />
   </p>
@@ -33,6 +39,7 @@
 
 - [About The Project](#about-the-project)
 - [Key Features](#key-features)
+- [AI Assistant (V2)](#-ai-assistant-v2)
 - [Tech Stack](#tech-stack)
 - [Architecture \& Design Principles](#architecture--design-principles)
   - [MVC Architecture](#mvc-architecture)
@@ -59,6 +66,7 @@ Going beyond standard online judges, **CodeArena** features:
 1. **War Room**: Real-time 1v1 and small-group competitive coding sessions with low-latency WebSocket synchronization.
 2. **Per-Problem Discussions**: Threaded discussion boards for collaborative problem-solving.
 3. **Company Tags**: User-curated company and interview round tags for targeted interview preparation.
+4. **An AI tutor that will not solve the problem for you**: rule-based stuck detection, a four-rung hint ladder, verdict explanations, and post-acceptance code review — see [AI Assistant](#-ai-assistant-v2).
 
 The platform is engineered using the **GERM Stack** (Go, Gin, React, MongoDB) prioritizing high throughput, strict security sandboxing, and ultra-low latency.
 
@@ -92,6 +100,17 @@ The platform is engineered using the **GERM Stack** (Go, Gin, React, MongoDB) pr
 - **Rate Limiting**: Redis fixed-window limits on user-generated writes, failing open so a cache outage never takes the platform down.
 - **Profile & History**: Solve statistics by difficulty and a filterable, paginated submission history.
 
+### 🤖 AI Assistant (V2)
+- **Rule-based stuck detection, no model involved**: fixation on one hidden case, submission bursts, verdict oscillation, and stalled progress are read from data the judge already stores. The trigger is free, instant, and inspectable — a student can be shown which of their own attempts produced the offer.
+- **A four-rung hint ladder the student steers**: restate a constraint → name the shape of the approach → characterise the failing hidden case *without printing it* → outline in prose. Descending a rung takes a second, explicit click.
+- **No rung emits code.** Enforced twice: in every system prompt, and by an output filter that discards — never trims — any response containing source. Fenced blocks, definitions, entry points, one-liners, all-caps pseudocode, Unicode homoglyphs and zero-width characters are all rejected.
+- **Verdict explanations**: turns a bare `tle` into a diagnosis of *why* this code timed out, without supplying the fix.
+- **Post-acceptance code review**: eight fixed sections, available only once the judge has accepted the submission. It states that the *judge* decided correctness and the review is advisory.
+- **Submitted code is untrusted input**: fenced as data in every prompt, with the fence tokens stripped from the source first so a student cannot close the delimiter and continue as the operator.
+- **Optional, like Redis and the broker**: with no API key the endpoints answer `503`, the client hides the feature, and judging is entirely unaffected. The judge worker never receives a model credential and never calls one.
+
+Full design, threat model and known limitations: **[docs/assist.md](./docs/assist.md)**.
+
 ---
 
 ## 🛠️ Tech Stack
@@ -104,6 +123,8 @@ The platform is engineered using the **GERM Stack** (Go, Gin, React, MongoDB) pr
 | **Caching / PubSub** | Redis | Ephemeral session state, admission control, and WebSocket fan-out |
 | **Message Queue** | RabbitMQ | Decoupled background submission processing and queue management |
 | **Sandbox** | Docker / cgroups | Isolated, resource-limited execution environment for untrusted code |
+| **AI Assistant** | Groq (`openai/gpt-oss-120b`) | Hints, verdict explanations and code review over an OpenAI-compatible API |
+| **Deployment** | AWS EC2 t4g.small (ARM64) | nginx + Let's Encrypt TLS, images built and published by GitHub Actions → GHCR |
 
 ---
 
@@ -267,7 +288,17 @@ Ensure you have the following installed on your system:
    RABBITMQ_URL=amqp://guest:guest@localhost:5672/
    REDIS_URL=redis://localhost:6379/0
    WORKER_COUNT=4
+
+   # Optional — the AI assistant. Leave GROQ_API_KEY empty and the assist
+   # endpoints answer 503, the client hides the feature, and judging is
+   # unaffected. Only the API process needs this; the judge worker never
+   # calls a model.
+   GROQ_API_KEY=
+   ASSIST_MODEL=openai/gpt-oss-120b
+   ASSIST_ENABLED=true
    ```
+
+   A fully commented template lives at [`server/env.example`](./server/env.example).
 
 3. **Install Dependencies & Tidy Modules**:
    ```bash
@@ -391,6 +422,18 @@ Ensure you have the following installed on your system:
 | `/api/users/me/stats` | `GET` | ✅ | Solve counts broken down by difficulty |
 | `/api/users/me/submissions` | `GET` | ✅ | Filterable, paginated submission history |
 
+### AI Assistant
+
+| Endpoint | Method | Auth | Description |
+| :--- | :--- | :---: | :--- |
+| `/api/problems/:slug/assist/state` | `GET` | ✅ | Whether the student looks stuck, why, and how far down the ladder the signals justify |
+| `/api/assist/hint` | `POST` | ✅ | One rung of the hint ladder (1–4). Rung 3 reads the failing hidden case server-side and never returns it |
+| `/api/assist/explain` | `POST` | ✅ | Explain a non-accepted verdict. Author-only |
+| `/api/assist/review` | `POST` | ✅ | Review an **accepted** submission. Author-only; `404` for any other verdict |
+| `/api/admin/problems/:id/assist/testcases` | `POST` | 🛡️ | Propose adversarial test cases. Expected outputs come from executing the reference solution, never from the model. Writes nothing |
+
+Every route degrades to `503` when no model is configured; a *withheld* generation answers `502`, so one filtered response never hides the feature. Per-user rate limits: 10 hints, 15 explanations, 5 reviews per minute.
+
 ### War Rooms
 
 | Endpoint | Method | Auth | Description |
@@ -443,15 +486,28 @@ service rules are verified without a database. The `server/tests` package holds
 the integration tests, which use a dedicated `online_judge_test` database and a
 scripted sandbox so no Docker daemon is needed.
 
+The integration suite needs a MongoDB it is allowed to destroy:
+
+```bash
+docker run --rm -d -p 27017:27017 --name oj-mongo-test mongo:7
+cd server
+TEST_MONGO_URI=mongodb://localhost:27017 go test ./tests/ -count=1
+```
+
+> **The suite refuses to run against anything that is not local.** `assertLocalMongo`
+> rejects any `mongodb+srv://` URI or unrecognised host, and the run-scoped database is
+> dropped afterwards. The same guard now protects the seeder: it classifies its target,
+> prints `Seed target: LOCAL|PRODUCTION|UNKNOWN host=… database=…` before writing, and
+> refuses a non-local database unless `--allow-production` is given. Ambiguity fails closed.
+
 Frontend:
 
 ```bash
 cd client
-npm run lint
+npm run test     # vitest
+npm run lint     # oxlint
 npm run build
 ```
-
-> **Note**: Integration tests connect to MongoDB Atlas to execute real database assertions against a dedicated `online_judge_test` database which is automatically purged after test execution.
 
 ---
 
@@ -481,11 +537,19 @@ npm run build
   - [x] Threaded per-problem discussion board
   - [x] Company interview tagging system and company explorer
   - [x] Admin dashboard for problems and test cases
-- [ ] **Phase 6 (V2): AI & Scale**
+- [x] **Phase 6 (V2): The AI assistant**
+  - [x] Rule-based stuck detection over existing submission signals
+  - [x] Four-rung hint ladder with a code-rejecting output filter
+  - [x] Verdict explanations, cached across students by problem and failing case
+  - [x] Post-acceptance code review with its own filter and cache
+  - [x] Adversarial test-case generation, expected outputs produced by the sandbox
+  - [x] Prompt-injection corpus and red-teamed output filters
+- [ ] **Phase 7 (V2): Scale & integrity**
   - [ ] Pre-warmed sandbox pooling, moving from Docker to `isolate`
   - [ ] Autoscaling worker pools driven by queue depth
   - [ ] MOSS-style plagiarism detection
-  - [ ] AI-assisted hints and code review
+  - [ ] Semantic problem search and next-problem recommendation
+  - [ ] Timed contests with a global leaderboard
 
 ---
 
@@ -494,6 +558,7 @@ npm run build
 Detailed documentation is available in the [`docs/`](./docs/) directory:
 - 📜 **[CONSTITUTION.md](./docs/CONSTITUTION.md)**: Coding standards, TDD rules, directory conventions, and security guidelines.
 - 🏗️ **[architecture.md](./docs/architecture.md)**: How a submission flows from request to verdict, why the queue has two lanes, how War Room races are decided, and the sandbox guarantees.
+- 🤖 **[assist.md](./docs/assist.md)**: The AI assistant — the hint ladder, why the filters are separate, what it refuses to do, what has been validated against a real model, and where it is still thin.
 - 🔐 **[auth.md](./docs/auth.md)**: Full technical specification of the authentication architecture, security model, and API flows.
 
 ---
